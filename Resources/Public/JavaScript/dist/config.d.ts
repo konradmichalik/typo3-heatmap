@@ -13,11 +13,13 @@ export declare class HeatmapConfig {
     showLegend: boolean;
     showYearLabels: boolean;
     showMonthLabels: boolean;
+    /** @deprecated Ignored since the viewBox rewrite. Removal targeted for 2.0. */
     minCellSize: number;
+    /** @deprecated Ignored since the viewBox rewrite. Removal targeted for 2.0. */
     maxCellSize: number;
-    cellSpacing: number;
-    containerPadding: number;
+    /** @deprecated Ignored since the viewBox rewrite. Removal targeted for 2.0. */
     tooltipWidth: number;
+    /** @deprecated Ignored since the viewBox rewrite. Removal targeted for 2.0. */
     tooltipHeight: number;
     tooltipItemSingular: string;
     tooltipItemPlural: string;

@@ -53,24 +53,29 @@ class Heatmap {
     }
 
     private parseOptions(dataset: DOMStringMap): HeatmapOptions {
-        return {
+        const options: HeatmapOptions = {
             duration: parseInt(dataset.optionsDuration || '365'),
-            dateRangeMode: (dataset.optionsDateRangeMode as 'year' | 'year-auto' | 'month' | 'auto') || 'auto',
+            dateRangeMode: (dataset.optionsDateRangeMode as HeatmapOptions['dateRangeMode']) || 'auto',
             color: dataset.optionsColor || '255, 135, 0',
             locale: dataset.optionsLocale || 'en-GB',
             showLegend: dataset.optionsShowLegend !== 'false',
             showYearLabels: dataset.optionsShowYearLabels !== 'false',
             showMonthLabels: dataset.optionsShowMonthLabels !== 'false',
-            minCellSize: parseInt(dataset.optionsMinCellSize || '8'),
-            maxCellSize: parseInt(dataset.optionsMaxCellSize || '20'),
-            tooltipWidth: parseInt(dataset.optionsTooltipWidth || '120'),
-            tooltipHeight: parseInt(dataset.optionsTooltipHeight || '26'),
             tooltipItemSingular: dataset.optionsTooltipItemSingular || 'change',
             tooltipItemPlural: dataset.optionsTooltipItemPlural || 'changes',
             legendLess: dataset.optionsLegendLess || 'Less',
             legendMore: dataset.optionsLegendMore || 'More',
             weekStartsOnMonday: !!+(dataset.optionsWeekStartsOnMonday || '0')
         };
+
+        // Deprecated options: only forward them when explicitly configured so
+        // the deprecation warning fires exactly for setups that still use them.
+        if (dataset.optionsMinCellSize !== undefined) options.minCellSize = parseInt(dataset.optionsMinCellSize);
+        if (dataset.optionsMaxCellSize !== undefined) options.maxCellSize = parseInt(dataset.optionsMaxCellSize);
+        if (dataset.optionsTooltipWidth !== undefined) options.tooltipWidth = parseInt(dataset.optionsTooltipWidth);
+        if (dataset.optionsTooltipHeight !== undefined) options.tooltipHeight = parseInt(dataset.optionsTooltipHeight);
+
+        return options;
     }
 
     private showError(container: HTMLElement, message: string): void {

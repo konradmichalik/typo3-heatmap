@@ -8,17 +8,14 @@
 [![Supported TYPO3 versions](https://typo3-badges.dev/badge/typo3_heatmap/typo3/shields.svg)](https://extensions.typo3.org/extension/typo3_heatmap)
 [![Supported PHP Versions](https://img.shields.io/packagist/dependency-v/konradmichalik/typo3-heatmap/php?logo=php)](https://packagist.org/packages/konradmichalik/typo3-heatmap)
 ![Stability](https://typo3-badges.dev/badge/typo3_heatmap/stability/shields.svg)
-[![Coverage](https://img.shields.io/coverallsCoverage/github/jackd248/typo3-heatmap?logo=coveralls)](https://coveralls.io/github/jackd248/typo3-heatmap)
-[![CGL](https://img.shields.io/github/actions/workflow/status/jackd248/typo3-heatmap/cgl.yml?label=cgl&logo=github)](https://github.com/jackd248/typo3-heatmap/actions/workflows/cgl.yml)
-[![Tests](https://img.shields.io/github/actions/workflow/status/jackd248/typo3-heatmap/tests.yml?label=tests&logo=github)](https://github.com/jackd248/typo3-heatmap/actions/workflows/tests.yml)
+[![Coverage](https://img.shields.io/coverallsCoverage/github/konradmichalik/typo3-heatmap?logo=coveralls)](https://coveralls.io/github/konradmichalik/typo3-heatmap)
+[![CGL](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-heatmap/cgl.yml?label=cgl&logo=github)](https://github.com/konradmichalik/typo3-heatmap/actions/workflows/cgl.yml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-heatmap/tests.yml?label=tests&logo=github)](https://github.com/konradmichalik/typo3-heatmap/actions/workflows/tests.yml)
 [![License](https://poser.pugx.org/konradmichalik/typo3-heatmap/license)](LICENSE.md)
 
 </div>
 
 This extension provides a dashboard widget to display a (GitHub lookalike) contribution heatmap of e.g. for TYPO3 content changes.
-
-> [!warning]
-> This package is in early development stage and may change significantly in the future. I am working steadily to release a stable version as soon as possible.
 
 ![Content changes heatmap](Documentation/Images/heatmap.jpg "Content changes heatmap")
 

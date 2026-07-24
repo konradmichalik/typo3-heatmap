@@ -89,10 +89,9 @@ The following render date range modes are available:
 
 ![Mode auto](Images/mode-auto.jpg "Mode auto")
 
-- Automatically calculates optimal date range based on container size and available data
-- Shows minimum 30 days, maximum 365 days
-- Prioritizes space utilization for best visual representation
-- May trim older data if it exceeds optimal display duration
+- Chooses the number of week columns from the container width using coarse breakpoints (≥ 700px → ~1 year, ≥ 400px → ~6 months, otherwise ~3 months)
+- The SVG scales smoothly between breakpoints via its `viewBox`, so it only re-renders when a breakpoint is crossed
+- Trims older data that does not fit the chosen window
 
 2. `year`
 
@@ -118,6 +117,25 @@ The following render date range modes are available:
 - Starts from January 1st or earliest data (whichever is later)
 - Ensures minimum 30 days for meaningful visualization
 - Adapts to available data within the current year
+
+### Options
+
+Additional widget options (set under `$options` in `Services.yaml`):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `color` | `255, 135, 0` | Base RGB color of the heatmap cells |
+| `dateRangeMode` | `auto` | `auto`, `year`, `year-auto` or `month` (see above) |
+| `duration` | `365` | Number of days to display. Only takes effect in `auto`/`year-auto` setups; `year` and `month` use a fixed window |
+| `locale` | `en-GB` | Locale used for month names and tooltip dates |
+| `showLegend` | `true` | Show the "Less … More" legend |
+| `showMonthLabels` | `true` | Show month labels above the grid |
+| `showYearLabels` | `true` | Show year labels below the grid |
+| `weekStartsOnMonday` | `false` | Start weeks on Monday instead of Sunday (GitHub style) |
+
+> [!warning]
+> **Deprecated options.** After the switch to viewBox-based rendering, the following options no longer have any effect and will be removed in **2.0**. They are still read but emit a one-time console warning:
+> `minCellSize`, `maxCellSize` (cell size is now fixed in a logical coordinate system and scaled via the `viewBox`) and `tooltipWidth`, `tooltipHeight` (the tooltip is an HTML overlay that sizes itself automatically).
 
 ---
 
