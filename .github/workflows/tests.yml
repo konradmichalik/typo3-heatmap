@@ -20,7 +20,10 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-version }}
-          tools: composer:v2
+          # Pin Composer 2.8: newer Composer blocks packages affected by
+          # security advisories during resolution, which currently makes every
+          # released TYPO3 12.4.x unresolvable. 2.8 warns instead.
+          tools: composer:2.8
           coverage: none
       - name: Require TYPO3 ${{ matrix.typo3-version }}
         run: |
