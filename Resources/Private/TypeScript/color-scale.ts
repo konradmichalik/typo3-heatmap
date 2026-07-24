@@ -25,7 +25,6 @@ export class ColorScale {
     }
 
     // Find maximum value and calculate better distribution - support legacy field names
-    const values = data.map(d => this.getCountValue(d)).filter(v => v > 0).sort((a, b) => a - b);
     this.maxValue = Math.max(...data.map(d => this.getCountValue(d)));
 
     // Better thresholds for low-value ranges (0-8 typical case)
@@ -43,13 +42,6 @@ export class ColorScale {
       const step = Math.ceil(this.maxValue / 5);
       this.thresholds = [0, step, step * 2, step * 3, step * 4];
     }
-
-    console.log(`Color Scale Debug:`, {
-      maxValue: this.maxValue,
-      dataRange: values.length > 0 ? `${Math.min(...values)}-${Math.max(...values)}` : 'no data',
-      thresholds: this.thresholds,
-      sampleValues: values.slice(0, 10)
-    });
   }
 
   public getColor(value: number): string {

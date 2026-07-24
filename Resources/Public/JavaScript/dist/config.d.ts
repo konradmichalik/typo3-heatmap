@@ -4,9 +4,10 @@
  * Configuration class for heatmap settings
  */
 import { HeatmapOptions, ColorRGB } from './types.js';
+import { DateRangeMode } from './date-utils.js';
 export declare class HeatmapConfig {
     duration: number;
-    dateRangeMode: 'year' | 'year-auto' | 'month' | 'auto';
+    dateRangeMode: DateRangeMode;
     color: ColorRGB;
     locale: string;
     showLegend: boolean;

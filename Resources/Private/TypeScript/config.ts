@@ -5,10 +5,11 @@
  */
 
 import {HeatmapOptions, ColorRGB} from './types.js';
+import {DateRangeMode} from './date-utils.js';
 
 export class HeatmapConfig {
     public duration: number;
-    public dateRangeMode: 'year' | 'year-auto' | 'month' | 'auto';
+    public dateRangeMode: DateRangeMode;
     public color: ColorRGB;
     public locale: string;
     public showLegend: boolean;
@@ -62,13 +63,6 @@ export class HeatmapConfig {
 
         // Week configuration
         this.weekStartsOnMonday = options.weekStartsOnMonday ?? false; // Default: Sunday (GitHub style)
-
-        // Debug output
-        console.log('HeatmapConfig initialized:', {
-            weekStartsOnMonday: this.weekStartsOnMonday,
-            receivedOptions: options.weekStartsOnMonday,
-            allOptions: options
-        });
 
         // Legend labels
         this.legendLess = options.legendLess ?? 'Less';

@@ -34,12 +34,6 @@ export class HeatmapConfig {
         this.tooltipItemPlural = options.tooltipItemPlural ?? 'changes';
         // Week configuration
         this.weekStartsOnMonday = options.weekStartsOnMonday ?? false; // Default: Sunday (GitHub style)
-        // Debug output
-        console.log('HeatmapConfig initialized:', {
-            weekStartsOnMonday: this.weekStartsOnMonday,
-            receivedOptions: options.weekStartsOnMonday,
-            allOptions: options
-        });
         // Legend labels
         this.legendLess = options.legendLess ?? 'Less';
         this.legendMore = options.legendMore ?? 'More';
