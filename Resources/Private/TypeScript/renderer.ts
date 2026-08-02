@@ -96,7 +96,12 @@ export class HeatmapRenderer {
     private findEarliestData(): Date | undefined {
         if (this.data.length === 0) return undefined;
         const times = this.data
-            .map(d => new Date(d.date || d.change_date || '').getTime())
+            .map(d => {
+                // Parse YYYY-MM-DD as local midnight — new Date('YYYY-MM-DD')
+                // is UTC per spec, which would shift the day west of UTC.
+                const [y, m, day] = (d.date || d.change_date || '').split('-').map(Number);
+                return new Date(y, (m ?? 1) - 1, day ?? 1).getTime();
+            })
             .filter(t => !Number.isNaN(t));
         if (times.length === 0) return undefined;
         return new Date(Math.min(...times));
