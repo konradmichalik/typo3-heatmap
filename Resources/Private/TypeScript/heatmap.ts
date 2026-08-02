@@ -26,24 +26,28 @@ class Heatmap {
         const container = target.querySelector('#heatmap-container') as HTMLElement;
         if (!container) return;
 
-        // Prevent duplicate initialization
-        if (container.dataset.initialized === 'true') return;
+        const store = container as unknown as {_heatmapRenderer?: HeatmapRenderer};
+
+        // Tear down a previous renderer (and its ResizeObserver) before re-init.
+        // Keying off the stored instance keeps the guard effective while still
+        // running the teardown on a genuine re-render of the same container.
+        if (store._heatmapRenderer) {
+            store._heatmapRenderer.destroy();
+            store._heatmapRenderer = undefined;
+        } else if (container.dataset.initialized === 'true') {
+            return; // initialized elsewhere, nothing to replace
+        }
         container.dataset.initialized = 'true';
 
         try {
             const data: HeatmapData[] = JSON.parse(container.dataset.values || '[]');
             const options = this.parseOptions(container.dataset);
 
-            // Tear down a previous renderer (and its ResizeObserver) if present.
-            const previous = (container as unknown as {_heatmapRenderer?: HeatmapRenderer})._heatmapRenderer;
-            previous?.destroy();
-
             // Clear any existing content
             container.innerHTML = '';
 
             // Store renderer instance for potential cleanup
-            (container as unknown as {_heatmapRenderer?: HeatmapRenderer})._heatmapRenderer =
-                new HeatmapRenderer(container, data, options);
+            store._heatmapRenderer = new HeatmapRenderer(container, data, options);
         } catch (error) {
             console.error('Error initializing heatmap:', error);
             this.showError(container, 'Failed to load heatmap data');
@@ -54,7 +58,6 @@ class Heatmap {
 
     private parseOptions(dataset: DOMStringMap): HeatmapOptions {
         const options: HeatmapOptions = {
-            duration: parseInt(dataset.optionsDuration || '365'),
             dateRangeMode: (dataset.optionsDateRangeMode as HeatmapOptions['dateRangeMode']) || 'auto',
             color: dataset.optionsColor || '255, 135, 0',
             locale: dataset.optionsLocale || 'en-GB',
@@ -70,6 +73,7 @@ class Heatmap {
 
         // Deprecated options: only forward them when explicitly configured so
         // the deprecation warning fires exactly for setups that still use them.
+        if (dataset.optionsDuration !== undefined) options.duration = parseInt(dataset.optionsDuration);
         if (dataset.optionsMinCellSize !== undefined) options.minCellSize = parseInt(dataset.optionsMinCellSize);
         if (dataset.optionsMaxCellSize !== undefined) options.maxCellSize = parseInt(dataset.optionsMaxCellSize);
         if (dataset.optionsTooltipWidth !== undefined) options.tooltipWidth = parseInt(dataset.optionsTooltipWidth);

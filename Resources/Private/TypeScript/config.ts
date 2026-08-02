@@ -11,6 +11,7 @@ import {DateRangeMode} from './date-utils.js';
 // are still read for backwards compatibility but emit a one-time warning and
 // will be removed in 2.0.
 const deprecatedOptions: Array<{key: keyof HeatmapOptions; reason: string}> = [
+    {key: 'duration', reason: 'the date range is derived from dateRangeMode and container width'},
     {key: 'minCellSize', reason: 'cell size is now fixed in a logical coordinate system and scaled via the SVG viewBox'},
     {key: 'maxCellSize', reason: 'cell size is now fixed in a logical coordinate system and scaled via the SVG viewBox'},
     {key: 'tooltipWidth', reason: 'the tooltip is an HTML overlay that sizes itself automatically'},
@@ -31,6 +32,7 @@ function warnDeprecatedOptions(options: HeatmapOptions): void {
 }
 
 export class HeatmapConfig {
+    /** @deprecated Ignored since the viewBox rewrite; use dateRangeMode. Removal targeted for 2.0. */
     public duration: number;
     public dateRangeMode: DateRangeMode;
     public color: ColorRGB;
@@ -55,8 +57,9 @@ export class HeatmapConfig {
     constructor(options: HeatmapOptions = {}) {
         warnDeprecatedOptions(options);
 
-        // Duration and date range. `duration` only takes effect in setups
-        // without a fixed dateRangeMode ('year'/'month'); see DataProviders.md.
+        // `duration` is deprecated and no longer read by the renderer; the
+        // active range comes from dateRangeMode + container width. Kept for
+        // backwards compatibility until 2.0.
         this.duration = options.duration ?? 365;
         this.dateRangeMode = options.dateRangeMode ?? 'auto';
 
