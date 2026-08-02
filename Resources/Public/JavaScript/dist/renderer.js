@@ -24,14 +24,21 @@ const DAYS = 7; // rows per week
 const RESIZE_DEBOUNCE_MS = 150;
 function debounce(fn, wait) {
     let timer;
-    return ((...args) => {
+    const debounced = ((...args) => {
         if (timer !== undefined)
             clearTimeout(timer);
         timer = setTimeout(() => fn(...args), wait);
     });
+    debounced.cancel = () => {
+        if (timer !== undefined)
+            clearTimeout(timer);
+        timer = undefined;
+    };
+    return debounced;
 }
 export class HeatmapRenderer {
     constructor(container, data, options = {}) {
+        this.destroyed = false;
         this.currentWeeks = -1;
         this.container = container;
         this.data = data;
@@ -47,13 +54,16 @@ export class HeatmapRenderer {
         this.observe();
     }
     observe() {
-        this.resizeObserver = new ResizeObserver(debounce((entries) => {
+        this.resizeHandler = debounce((entries) => {
             const width = entries[0]?.contentRect.width ?? 0;
             this.update(width);
-        }, RESIZE_DEBOUNCE_MS));
+        }, RESIZE_DEBOUNCE_MS);
+        this.resizeObserver = new ResizeObserver(this.resizeHandler);
         this.resizeObserver.observe(this.container);
     }
     update(width) {
+        if (this.destroyed)
+            return; // a queued callback fired after teardown
         if (width === 0)
             return; // widget not visible yet
         const range = this.resolveRange(width);
@@ -352,7 +362,9 @@ export class HeatmapRenderer {
         square.addEventListener('mouseout', () => this.tooltip.hide());
     }
     destroy() {
+        this.destroyed = true;
         this.resizeObserver?.disconnect();
+        this.resizeHandler?.cancel();
         this.tooltip.destroy();
         if (this.svg) {
             this.svg.remove();

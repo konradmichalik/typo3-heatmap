@@ -34,12 +34,22 @@ const DAYS = 7;               // rows per week
 
 const RESIZE_DEBOUNCE_MS = 150;
 
-function debounce<T extends (...args: never[]) => void>(fn: T, wait: number): T {
+interface Debounced<T extends (...args: never[]) => void> {
+    (...args: Parameters<T>): void;
+    cancel(): void;
+}
+
+function debounce<T extends (...args: never[]) => void>(fn: T, wait: number): Debounced<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    return ((...args: Parameters<T>) => {
+    const debounced = ((...args: Parameters<T>) => {
         if (timer !== undefined) clearTimeout(timer);
         timer = setTimeout(() => fn(...args), wait);
-    }) as T;
+    }) as Debounced<T>;
+    debounced.cancel = () => {
+        if (timer !== undefined) clearTimeout(timer);
+        timer = undefined;
+    };
+    return debounced;
 }
 
 export class HeatmapRenderer {
@@ -50,6 +60,8 @@ export class HeatmapRenderer {
     private tooltip: HeatmapTooltip;
     private svg?: SVGSVGElement;
     private resizeObserver?: ResizeObserver;
+    private resizeHandler?: Debounced<(entries: ResizeObserverEntry[]) => void>;
+    private destroyed = false;
     private currentWeeks = -1;
     private earliestData?: Date;
 
@@ -71,16 +83,16 @@ export class HeatmapRenderer {
     }
 
     private observe(): void {
-        this.resizeObserver = new ResizeObserver(
-            debounce((entries: ResizeObserverEntry[]) => {
-                const width = entries[0]?.contentRect.width ?? 0;
-                this.update(width);
-            }, RESIZE_DEBOUNCE_MS),
-        );
+        this.resizeHandler = debounce((entries: ResizeObserverEntry[]) => {
+            const width = entries[0]?.contentRect.width ?? 0;
+            this.update(width);
+        }, RESIZE_DEBOUNCE_MS);
+        this.resizeObserver = new ResizeObserver(this.resizeHandler);
         this.resizeObserver.observe(this.container);
     }
 
     private update(width: number): void {
+        if (this.destroyed) return; // a queued callback fired after teardown
         if (width === 0) return; // widget not visible yet
 
         const range = this.resolveRange(width);
@@ -425,7 +437,9 @@ export class HeatmapRenderer {
     }
 
     public destroy(): void {
+        this.destroyed = true;
         this.resizeObserver?.disconnect();
+        this.resizeHandler?.cancel();
         this.tooltip.destroy();
         if (this.svg) {
             this.svg.remove();

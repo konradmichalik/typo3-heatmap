@@ -17,6 +17,8 @@ export declare class HeatmapRenderer {
     private tooltip;
     private svg?;
     private resizeObserver?;
+    private resizeHandler?;
+    private destroyed;
     private currentWeeks;
     private earliestData?;
     constructor(container: HTMLElement, data: HeatmapData[], options?: HeatmapOptions);
