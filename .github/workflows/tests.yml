@@ -16,6 +16,8 @@ jobs:
     name: PHP ${{ matrix.php-version }} / TYPO3 ${{ matrix.typo3-version }} / ${{ matrix.dependencies }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
