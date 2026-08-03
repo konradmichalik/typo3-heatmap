@@ -6,4 +6,24 @@ on:
 
 jobs:
   cgl:
-    uses: jackd248/reusable-github-actions/.github/workflows/cgl.yml@main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # composer.lock pins packages that require PHP >= 8.3.
+          php-version: '8.3'
+          # Composer >= 2.9 blocks packages with security advisories during
+          # resolution; 2.8 warns instead, which we rely on for the TYPO3 12.4
+          # matrix (see tests.yml).
+          tools: composer:2.8
+          coverage: none
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+      - name: Lint
+        run: composer lint
+      - name: Static analysis
+        run: composer sca

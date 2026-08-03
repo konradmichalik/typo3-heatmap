@@ -1,284 +1,225 @@
 /**
  * Module: @KonradMichalik/Typo3HeatmapWidget/renderer
- * Version: 2.1.0 - TypeScript GitHub-style heatmap with fixed positioning
  *
- * Simple GitHub-style heatmap renderer
+ * GitHub-style heatmap renderer.
+ *
+ * The heatmap is drawn in a fixed logical coordinate system (constant cell
+ * size) and scaled to the container via the SVG `viewBox`. The only dynamic
+ * decision left is how many week columns to show; everything else — scaling,
+ * centering — is handled by the browser.
  */
 import { HeatmapConfig } from './config.js';
-import { HeatmapLayoutCalculator } from './layout.js';
 import { ColorScale } from './color-scale.js';
 import { HeatmapTooltip } from './tooltip.js';
+import { getDayOfWeekIndex, getWeekStart, resolveWeekCount, toDateKey, weekSpan, } from './date-utils.js';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+// Logical coordinate system — the viewBox scales these to any container size.
+const CELL = 10; // logical cell size
+const GAP = 2; // gap between cells
+const PITCH = CELL + GAP; // 12 — grid pitch
+const LABEL_TOP = 16; // band above the grid for month labels
+const LABEL_LEFT = 0; // reserved for optional weekday labels
+const LEGEND_H = 20; // band below the grid for legend + year labels
+const DAYS = 7; // rows per week
+const RESIZE_DEBOUNCE_MS = 150;
+function debounce(fn, wait) {
+    let timer;
+    const debounced = ((...args) => {
+        if (timer !== undefined)
+            clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), wait);
+    });
+    debounced.cancel = () => {
+        if (timer !== undefined)
+            clearTimeout(timer);
+        timer = undefined;
+    };
+    return debounced;
+}
 export class HeatmapRenderer {
     constructor(container, data, options = {}) {
-        this.allDates = [];
+        this.destroyed = false;
+        this.currentWeeks = -1;
         this.container = container;
         this.data = data;
         this.config = new HeatmapConfig(options);
         this.colorScale = new ColorScale(this.config, data);
-        // Process data first to calculate optimal duration
-        this.processDataForLayout();
-        // Calculate layout with optimal duration
-        const layoutCalculator = new HeatmapLayoutCalculator(this.config, container.offsetWidth || 800, container.offsetHeight || 200);
-        this.layout = layoutCalculator.calculate();
-        this.render();
+        this.earliestData = this.findEarliestData();
+        // The HTML tooltip is positioned relative to the container.
+        this.container.style.position = 'relative';
+        this.tooltip = new HeatmapTooltip(this.container);
+        // No immediate render: the first ResizeObserver callback with a real
+        // width triggers the initial draw. This also fixes initialization while
+        // the widget is still hidden (width 0).
+        this.observe();
     }
-    processDataForLayout() {
-        this.calculateDateRange();
-        if (this.dateRange) {
-            // Update config duration based on actual date range for optimal layout
-            const actualDuration = Math.ceil((this.dateRange.end.getTime() - this.dateRange.start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-            this.config.duration = actualDuration;
+    observe() {
+        this.resizeHandler = debounce((entries) => {
+            const width = entries[0]?.contentRect.width ?? 0;
+            this.update(width);
+        }, RESIZE_DEBOUNCE_MS);
+        this.resizeObserver = new ResizeObserver(this.resizeHandler);
+        this.resizeObserver.observe(this.container);
+    }
+    update(width) {
+        if (this.destroyed)
+            return; // a queued callback fired after teardown
+        if (width === 0)
+            return; // widget not visible yet
+        const range = this.resolveRange(width);
+        const weeks = weekSpan(range.start, range.end, this.config.weekStartsOnMonday);
+        // Only re-render when the column count actually changes. Between
+        // breakpoints the SVG scales for free via its viewBox.
+        if (weeks === this.currentWeeks)
+            return;
+        this.currentWeeks = weeks;
+        this.renderRange(range, weeks);
+    }
+    findEarliestData() {
+        if (this.data.length === 0)
+            return undefined;
+        const times = this.data
+            .map(d => {
+            // Parse YYYY-MM-DD as local midnight — new Date('YYYY-MM-DD')
+            // is UTC per spec, which would shift the day west of UTC.
+            const [y, m, day] = (d.date || d.change_date || '').split('-').map(Number);
+            return new Date(y, (m ?? 1) - 1, day ?? 1).getTime();
+        })
+            .filter(t => !Number.isNaN(t));
+        if (times.length === 0)
+            return undefined;
+        return new Date(Math.min(...times));
+    }
+    /**
+     * Resolve the date range to display for a given container width. Only the
+     * date window changes with size — never the cell geometry.
+     */
+    resolveRange(width) {
+        const monday = this.config.weekStartsOnMonday;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const end = new Date(today);
+        const startWeeksBack = (columns) => {
+            const start = getWeekStart(today, monday);
+            start.setDate(start.getDate() - (columns - 1) * 7);
+            return start;
+        };
+        switch (this.config.dateRangeMode) {
+            case 'year':
+                return { start: startWeeksBack(resolveWeekCount(width, 'year')), end };
+            case 'month':
+                return { start: startWeeksBack(resolveWeekCount(width, 'month')), end };
+            case 'year-auto': {
+                // Current calendar year, clamped to the earliest available data,
+                // with a 30-day floor for a meaningful display.
+                const yearStart = new Date(today.getFullYear(), 0, 1);
+                let start = this.earliestData && this.earliestData > yearStart
+                    ? new Date(this.earliestData)
+                    : yearStart;
+                const days = Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+                if (days < 30) {
+                    start = new Date(end);
+                    start.setDate(start.getDate() - 29);
+                }
+                start.setHours(0, 0, 0, 0);
+                return { start, end };
+            }
+            default: // 'auto'
+                return { start: startWeeksBack(resolveWeekCount(width, 'auto')), end };
         }
     }
-    render() {
-        this.createSVG();
-        this.processData();
-        this.renderCells();
-        this.renderLabels();
-        this.renderLegend();
+    renderRange(range, weekCount) {
+        const dates = this.buildDates(range);
+        const logicalWidth = weekCount * PITCH + LABEL_LEFT;
+        const logicalHeight = DAYS * PITCH + LABEL_TOP + LEGEND_H;
+        const svg = document.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('viewBox', `0 0 ${logicalWidth} ${logicalHeight}`);
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.maxHeight = '100%';
+        svg.style.display = 'block';
+        this.renderCells(svg, dates, range);
+        this.renderMonthLabels(svg, range);
+        this.renderYearLabels(svg, range);
+        this.renderLegend(svg, logicalWidth);
+        // Swap in the new SVG, leaving the tooltip overlay untouched.
+        if (this.svg)
+            this.svg.remove();
+        this.svg = svg;
+        this.container.appendChild(svg);
     }
-    createSVG() {
-        this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        this.svg.setAttribute('width', this.layout.containerWidth.toString());
-        this.svg.setAttribute('height', this.layout.containerHeight.toString());
-        this.svg.style.display = 'block';
-        this.mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        this.mainGroup.setAttribute('transform', `translate(${this.layout.offsetX}, ${this.layout.offsetY})`);
-        this.svg.appendChild(this.mainGroup);
-        this.tooltip = new HeatmapTooltip(this.config, this.layout);
-        this.svg.appendChild(this.tooltip.group);
-        this.container.appendChild(this.svg);
-    }
-    processData() {
-        this.calculateDateRange();
-        if (!this.dateRange) {
-            throw new Error('Date range calculation failed');
-        }
-        // Create date map with link support - support legacy field names
+    /**
+     * Materialize one entry per day in the range, merged with the data counts.
+     */
+    buildDates(range) {
         const dateMap = new Map(this.data.map(d => {
             const dateStr = d.date || d.change_date || '';
             const count = d.count ?? d.changes_count ?? 0;
-            const link = d.link;
-            return [dateStr, { count, link }];
+            return [dateStr, { count, link: d.link }];
         }));
-        this.allDates = [];
-        for (let d = new Date(this.dateRange.start); d <= this.dateRange.end; d.setDate(d.getDate() + 1)) {
-            const dateString = d.toISOString().split('T')[0];
-            const dayData = dateMap.get(dateString);
-            this.allDates.push({
-                date: dateString,
+        const dates = [];
+        for (let d = new Date(range.start); d <= range.end; d.setDate(d.getDate() + 1)) {
+            const key = toDateKey(d);
+            const dayData = dateMap.get(key);
+            dates.push({
+                date: key,
                 count: dayData?.count || 0,
                 link: dayData?.link,
                 dateObject: new Date(d),
-                // Legacy support
-                change_date: dateString,
-                changes_count: dayData?.count || 0
             });
         }
+        return dates;
     }
-    calculateDateRange() {
-        const today = new Date();
-        if (this.data.length === 0) {
-            const end = new Date(today);
-            const start = new Date(today);
-            start.setDate(start.getDate() - 364);
-            this.dateRange = { start, end };
-            return;
-        }
-        // Support legacy field names
-        const dates = this.data.map(d => new Date(d.date || d.change_date || '')).sort((a, b) => a.getTime() - b.getTime());
-        const earliestData = dates[0];
-        const latestData = dates[dates.length - 1];
-        let start, end;
-        switch (this.config.dateRangeMode) {
-            case 'year':
-                end = new Date(today);
-                start = new Date(today);
-                start.setDate(start.getDate() - 364);
-                break;
-            case 'month':
-                end = new Date(today); // Always show until today
-                start = new Date(end);
-                start.setDate(start.getDate() - 29);
-                break;
-            case 'year-auto':
-                // Show current year based on available data
-                end = new Date(today); // Always show until today
-                const yearStart = new Date(end.getFullYear(), 0, 1);
-                start = new Date(Math.max(earliestData.getTime(), yearStart.getTime()));
-                // Ensure at least 30 days for meaningful display
-                const yearDays = Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-                if (yearDays < 30) {
-                    start = new Date(end);
-                    start.setDate(start.getDate() - 29);
-                }
-                break;
-            default: // 'auto'
-                end = new Date(today); // Always show until today
-                // Calculate optimal duration based on container dimensions for best space utilization
-                const optimalDuration = this.calculateOptimalDuration();
-                // Calculate days since first data
-                const daysSinceFirstData = Math.ceil((end.getTime() - earliestData.getTime()) / (24 * 60 * 60 * 1000));
-                if (daysSinceFirstData < 30) {
-                    // Less than 30 days of data - show minimum 30 days
-                    start = new Date(end);
-                    start.setDate(start.getDate() - 29);
-                }
-                else if (daysSinceFirstData <= optimalDuration) {
-                    // Show all available data if it fits optimally
-                    start = new Date(earliestData);
-                }
-                else {
-                    // Show optimal duration from end date - this may cut off older entries for better visualization
-                    start = new Date(end);
-                    start.setDate(start.getDate() - optimalDuration + 1);
-                }
-        }
-        this.dateRange = { start, end };
-        // Debug output
-        console.log('Date Range Calculation:', {
-            mode: this.config.dateRangeMode,
-            today: today.toISOString().split('T')[0],
-            start: start.toISOString().split('T')[0],
-            end: end.toISOString().split('T')[0],
-            earliestData: earliestData.toISOString().split('T')[0],
-            latestData: latestData.toISOString().split('T')[0],
-            totalDays: Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
-        });
-    }
-    calculateOptimalDuration() {
-        // Calculate optimal duration based on container size for best space utilization
-        const containerWidth = this.container.offsetWidth || 800;
-        const containerHeight = this.container.offsetHeight || 200;
-        // Calculate available space more precisely
-        const availableWidth = containerWidth - 40; // Reserve for padding
-        const availableHeight = containerHeight - 85 - 20; // Reserve for labels (85px) + padding (20px)
-        // Target larger cell size for better visibility
-        const targetCellSize = Math.max(20, Math.min(30, Math.floor(availableHeight / 7))); // Prefer 20-30px cells
-        // Calculate how many weeks fit with this target cell size
-        const optimalWeeks = Math.floor(availableWidth / targetCellSize);
-        const optimalDays = Math.min(optimalWeeks * 7, 365); // Max 1 year
-        // Ensure minimum 30 days
-        const finalDays = Math.max(30, optimalDays);
-        console.log(`Duration Calculation:`, {
-            containerWidth,
-            containerHeight,
-            availableWidth,
-            availableHeight,
-            targetCellSize,
-            optimalWeeks,
-            optimalDays,
-            finalDays
-        });
-        return finalDays;
-    }
-    renderCells() {
-        if (!this.dateRange)
-            return;
-        // Calculate week boundaries based on configuration
-        const weekStartOffset = this.config.weekStartsOnMonday ? 1 : 0; // Monday = 1, Sunday = 0
-        // Calculate week start boundaries for proper alignment
-        const startWeekStart = this.getWeekStart(this.dateRange.start);
-        const endWeekStart = this.getWeekStart(this.dateRange.end);
-        // Calculate total weeks based on week start boundaries
-        const totalWeeks = Math.round((endWeekStart.getTime() - startWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-        this.allDates.forEach((d) => {
-            if (!this.dateRange || !d.dateObject)
+    renderCells(svg, dates, range) {
+        const monday = this.config.weekStartsOnMonday;
+        const startWeekStart = getWeekStart(range.start, monday);
+        dates.forEach(d => {
+            if (!d.dateObject)
                 return;
-            const dayOfWeek = this.getDayOfWeekIndex(d.dateObject); // 0-6 based on week start configuration
-            // Find the week start of the week containing this date
-            const currentWeekStart = this.getWeekStart(d.dateObject);
-            // Calculate how many weeks this date's week start is from the START date's week start
-            const weeksFromStart = Math.round((currentWeekStart.getTime() - startWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
-            // Skip dates that are outside our calculated range
-            if (weeksFromStart < 0 || weeksFromStart >= totalWeeks) {
-                return; // Skip rendering this date
-            }
-            this.renderCell(d, weeksFromStart, dayOfWeek);
+            const dayOfWeek = getDayOfWeekIndex(d.dateObject, monday);
+            const currentWeekStart = getWeekStart(d.dateObject, monday);
+            const weekIndex = Math.round((currentWeekStart.getTime() - startWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+            this.renderCell(svg, d, weekIndex, dayOfWeek);
         });
     }
-    getWeekStart(date) {
-        const weekStart = new Date(date);
-        const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-        if (this.config.weekStartsOnMonday) {
-            // Monday-based weeks: Monday = 0, Sunday = 6
-            const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday becomes 6, others shift down
-            weekStart.setDate(weekStart.getDate() - mondayOffset);
-        }
-        else {
-            // Sunday-based weeks (GitHub style): Sunday = 0
-            weekStart.setDate(weekStart.getDate() - dayOfWeek);
-        }
-        return weekStart;
-    }
-    getDayOfWeekIndex(date) {
-        const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-        if (this.config.weekStartsOnMonday) {
-            // Monday-based: Monday = 0, Tuesday = 1, ..., Sunday = 6
-            return dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-        }
-        else {
-            // Sunday-based (GitHub style): Sunday = 0, Monday = 1, ..., Saturday = 6
-            return dayOfWeek;
-        }
-    }
-    renderCell(data, weekIndex, dayOfWeek) {
-        if (!this.mainGroup)
-            return;
+    renderCell(svg, data, weekIndex, dayOfWeek) {
         const count = data.count ?? data.changes_count ?? 0;
-        // Create container for potential click handling
-        const cellGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        const x = weekIndex * this.layout.cellSize;
-        const y = dayOfWeek * this.layout.cellSize;
+        const rect = document.createElementNS(SVG_NS, 'rect');
+        const x = weekIndex * PITCH + LABEL_LEFT;
+        const y = dayOfWeek * PITCH + LABEL_TOP;
         rect.setAttribute('x', x.toString());
         rect.setAttribute('y', y.toString());
-        rect.setAttribute('width', (this.layout.cellSize - 1).toString());
-        rect.setAttribute('height', (this.layout.cellSize - 1).toString());
+        rect.setAttribute('width', CELL.toString());
+        rect.setAttribute('height', CELL.toString());
         rect.setAttribute('rx', '2');
         rect.setAttribute('ry', '2');
         rect.setAttribute('fill', this.colorScale.getColor(count));
         rect.setAttribute('stroke', 'rgba(27, 31, 35, 0.06)');
         rect.setAttribute('stroke-width', '1');
-        // Add cursor pointer if link exists
         if (data.link) {
             rect.style.cursor = 'pointer';
-            cellGroup.style.cursor = 'pointer';
         }
-        cellGroup.appendChild(rect);
-        this.addCellInteractivity(cellGroup, rect, data);
-        this.mainGroup.appendChild(cellGroup);
+        this.addCellInteractivity(rect, data);
+        svg.appendChild(rect);
     }
-    addCellInteractivity(cellGroup, rect, data) {
-        if (!this.tooltip)
-            return;
+    addCellInteractivity(rect, data) {
         const tooltipContent = this.formatTooltipContent(data);
-        // Mouse events
-        const showTooltip = () => {
-            if (!this.tooltip)
-                return;
-            const rectX = parseFloat(rect.getAttribute('x') || '0') + this.layout.offsetX;
-            const rectY = parseFloat(rect.getAttribute('y') || '0') + this.layout.offsetY;
-            this.tooltip.show(rectX + this.layout.cellSize / 2, rectY, tooltipContent, this.layout.containerWidth, this.layout.containerHeight);
+        rect.addEventListener('mouseover', () => {
+            this.tooltip.show(rect, tooltipContent);
             rect.setAttribute('stroke', '#1f2328');
             rect.setAttribute('stroke-width', '2');
             rect.style.filter = 'brightness(1.1)';
-        };
-        const hideTooltip = () => {
-            if (!this.tooltip)
-                return;
+        });
+        rect.addEventListener('mouseout', () => {
             this.tooltip.hide();
             rect.setAttribute('stroke', 'rgba(27, 31, 35, 0.06)');
             rect.setAttribute('stroke-width', '1');
             rect.style.filter = 'none';
-        };
-        cellGroup.addEventListener('mouseover', showTooltip);
-        cellGroup.addEventListener('mouseout', hideTooltip);
-        // Click handler for links
+        });
         if (data.link) {
-            cellGroup.addEventListener('click', (event) => {
+            rect.addEventListener('click', event => {
                 event.preventDefault();
-                // Open the link directly (now using regular URLs)
                 if (data.link) {
                     window.open(data.link, '_blank', 'noopener,noreferrer');
                 }
@@ -291,224 +232,143 @@ export class HeatmapRenderer {
         const date = data.dateObject.toLocaleDateString(this.config.locale, {
             day: '2-digit',
             month: '2-digit',
-            year: 'numeric'
+            year: 'numeric',
         });
         const count = data.count ?? data.changes_count ?? 0;
         const word = count === 1 ? this.config.tooltipItemSingular : this.config.tooltipItemPlural;
         let tooltip = `${date}: ${count} ${word}`;
-        // Add click hint if link exists
         if (data.link) {
             tooltip += `\n↗`;
         }
         return tooltip;
     }
-    renderLabels() {
-        this.renderMonthLabels();
-        this.renderYearLabels();
-    }
-    renderMonthLabels() {
-        if (!this.config.showMonthLabels || !this.dateRange || !this.mainGroup)
+    renderMonthLabels(svg, range) {
+        if (!this.config.showMonthLabels)
             return;
-        const months = [];
-        // Calculate week start boundaries for consistent positioning
-        const startWeekStart = this.getWeekStart(this.dateRange.start);
-        for (let d = new Date(this.dateRange.start); d <= this.dateRange.end; d.setDate(d.getDate() + 1)) {
-            if (d.getDate() === 1) {
-                const currentWeekStart = this.getWeekStart(d);
-                const weekIndex = Math.round((currentWeekStart.getTime() - startWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
-                if (!months.find(m => m.month === d.getMonth() && m.year === d.getFullYear())) {
-                    months.push({
-                        date: new Date(d),
-                        weekIndex,
-                        month: d.getMonth(),
-                        year: d.getFullYear()
-                    });
-                }
-            }
-        }
-        months.forEach(monthData => {
-            if (!this.mainGroup)
-                return;
-            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            text.setAttribute('x', (monthData.weekIndex * this.layout.cellSize + this.layout.cellSize / 2).toString());
-            text.setAttribute('y', '-5');
+        const monday = this.config.weekStartsOnMonday;
+        const startWeekStart = getWeekStart(range.start, monday);
+        const seen = new Set();
+        for (let d = new Date(range.start); d <= range.end; d.setDate(d.getDate() + 1)) {
+            if (d.getDate() !== 1)
+                continue;
+            const key = `${d.getFullYear()}-${d.getMonth()}`;
+            if (seen.has(key))
+                continue;
+            seen.add(key);
+            const currentWeekStart = getWeekStart(d, monday);
+            const weekIndex = Math.round((currentWeekStart.getTime() - startWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+            const text = document.createElementNS(SVG_NS, 'text');
+            text.setAttribute('x', (weekIndex * PITCH + LABEL_LEFT).toString());
+            text.setAttribute('y', (LABEL_TOP - 6).toString());
             text.setAttribute('fill', '#586069');
-            text.setAttribute('font-size', '10px');
-            text.setAttribute('text-anchor', 'middle');
-            text.textContent = monthData.date.toLocaleDateString(this.config.locale, { month: 'short' });
-            this.mainGroup.appendChild(text);
-        });
+            text.setAttribute('font-size', '9px');
+            text.textContent = d.toLocaleDateString(this.config.locale, { month: 'short' });
+            svg.appendChild(text);
+        }
     }
-    renderYearLabels() {
-        if (!this.config.showYearLabels || !this.dateRange || !this.mainGroup)
+    renderYearLabels(svg, range) {
+        if (!this.config.showYearLabels)
             return;
-        const years = [];
-        // Calculate week start boundaries for consistent positioning
-        const startWeekStart = this.getWeekStart(this.dateRange.start);
-        // First, look for New Year's Days (January 1st) within the date range
-        for (let d = new Date(this.dateRange.start); d <= this.dateRange.end; d.setDate(d.getDate() + 1)) {
-            if (d.getMonth() === 0 && d.getDate() === 1) {
-                const currentWeekStart = this.getWeekStart(d);
-                const weekIndex = Math.round((currentWeekStart.getTime() - startWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
-                if (!years.find(y => y.year === d.getFullYear())) {
-                    years.push({
-                        date: new Date(d),
-                        weekIndex,
-                        year: d.getFullYear()
-                    });
-                }
-            }
-        }
-        // If no year transitions found, add year labels for each unique year in the range
-        if (years.length === 0) {
-            const startYear = this.dateRange.start.getFullYear();
-            const endYear = this.dateRange.end.getFullYear();
-            for (let year = startYear; year <= endYear; year++) {
-                // Find the first occurrence of this year in our date range
-                let yearStartInRange = null;
-                if (year === startYear) {
-                    // Use the actual start date for the first year
-                    yearStartInRange = new Date(this.dateRange.start);
-                }
-                else {
-                    // Use January 1st for subsequent years
-                    const jan1 = new Date(year, 0, 1);
-                    if (jan1 >= this.dateRange.start && jan1 <= this.dateRange.end) {
-                        yearStartInRange = jan1;
-                    }
-                }
-                if (yearStartInRange) {
-                    const currentWeekStart = this.getWeekStart(yearStartInRange);
-                    const weekIndex = Math.round((currentWeekStart.getTime() - startWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
-                    years.push({
-                        date: new Date(yearStartInRange),
-                        weekIndex,
-                        year
-                    });
-                }
-            }
-        }
-        // If we still have no years, add the current year at a reasonable position
-        if (years.length === 0) {
-            const currentYear = this.dateRange.end.getFullYear();
-            const totalWeeks = Math.ceil((this.dateRange.end.getTime() - this.dateRange.start.getTime()) / (7 * 24 * 60 * 60 * 1000));
-            const centerWeek = Math.floor(totalWeeks / 2);
-            years.push({
-                date: new Date(this.dateRange.end),
-                weekIndex: centerWeek,
-                year: currentYear
-            });
-        }
-        years.forEach(yearData => {
-            if (!this.mainGroup)
-                return;
-            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            text.setAttribute('x', (yearData.weekIndex * this.layout.cellSize + this.layout.cellSize / 2).toString());
-            text.setAttribute('y', (this.layout.heatmapHeight + 20).toString());
+        const monday = this.config.weekStartsOnMonday;
+        const startWeekStart = getWeekStart(range.start, monday);
+        const baselineY = LABEL_TOP + DAYS * PITCH + 12;
+        // Mark January 1st occurrences within the range.
+        const seen = new Set();
+        for (let d = new Date(range.start); d <= range.end; d.setDate(d.getDate() + 1)) {
+            if (d.getMonth() !== 0 || d.getDate() !== 1)
+                continue;
+            if (seen.has(d.getFullYear()))
+                continue;
+            seen.add(d.getFullYear());
+            const currentWeekStart = getWeekStart(d, monday);
+            const weekIndex = Math.round((currentWeekStart.getTime() - startWeekStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+            const text = document.createElementNS(SVG_NS, 'text');
+            text.setAttribute('x', (weekIndex * PITCH + LABEL_LEFT).toString());
+            text.setAttribute('y', baselineY.toString());
             text.setAttribute('fill', '#24292e');
-            text.setAttribute('font-size', Math.max(12, Math.min(14, this.layout.cellSize * 0.7)).toString() + 'px');
+            text.setAttribute('font-size', '9px');
             text.setAttribute('font-weight', '600');
-            text.setAttribute('text-anchor', 'middle');
-            text.textContent = yearData.year.toString();
-            this.mainGroup.appendChild(text);
-        });
+            text.textContent = d.getFullYear().toString();
+            svg.appendChild(text);
+        }
     }
-    renderLegend() {
-        if (!this.config.showLegend || this.layout.cellSize < 8 || !this.mainGroup)
+    renderLegend(svg, logicalWidth) {
+        if (!this.config.showLegend)
             return;
-        const legendGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        const legendY = this.layout.heatmapHeight + 40;
-        // Calculate label widths for dynamic spacing
-        const lessTextWidth = this.estimateTextWidth(this.config.legendLess, 11);
-        const moreTextWidth = this.estimateTextWidth(this.config.legendMore, 11);
-        const squaresWidth = 5 * 12 - 2; // 5 squares * 12px spacing - 2px adjustment
-        const minSpacing = 8; // Minimum spacing between elements
-        // Calculate total legend width
-        const totalLegendWidth = lessTextWidth + minSpacing + squaresWidth + minSpacing + moreTextWidth;
-        const legendX = Math.max(0, this.layout.heatmapWidth - totalLegendWidth);
-        // "Less" label - positioned at start
-        const lessLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        const legendGroup = document.createElementNS(SVG_NS, 'g');
+        const legendY = LABEL_TOP + DAYS * PITCH + 12;
+        const lessTextWidth = this.estimateTextWidth(this.config.legendLess, 9);
+        const moreTextWidth = this.estimateTextWidth(this.config.legendMore, 9);
+        const squareSize = 8;
+        const squarePitch = 10;
+        const squaresWidth = 5 * squarePitch - (squarePitch - squareSize);
+        const spacing = 4;
+        const totalLegendWidth = lessTextWidth + spacing + squaresWidth + spacing + moreTextWidth;
+        const legendX = Math.max(0, logicalWidth - totalLegendWidth);
+        const lessLabel = document.createElementNS(SVG_NS, 'text');
         lessLabel.setAttribute('x', legendX.toString());
         lessLabel.setAttribute('y', legendY.toString());
         lessLabel.setAttribute('fill', '#586069');
-        lessLabel.setAttribute('font-size', '11px');
+        lessLabel.setAttribute('font-size', '9px');
         lessLabel.textContent = this.config.legendLess;
         legendGroup.appendChild(lessLabel);
-        // Legend squares - positioned after less label + spacing
-        const squaresStartX = legendX + lessTextWidth + minSpacing;
+        const squaresStartX = legendX + lessTextWidth + spacing;
         const thresholds = this.colorScale.getThresholds();
+        const { r, g, b } = this.config.color;
+        const opacities = [0, 0.4, 0.6, 0.8, 1.0];
         for (let i = 0; i < 5; i++) {
-            const square = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            square.setAttribute('x', (squaresStartX + (i * 12)).toString());
-            square.setAttribute('y', (legendY - 10).toString());
-            square.setAttribute('width', '10');
-            square.setAttribute('height', '10');
+            const square = document.createElementNS(SVG_NS, 'rect');
+            square.setAttribute('x', (squaresStartX + i * squarePitch).toString());
+            square.setAttribute('y', (legendY - squareSize).toString());
+            square.setAttribute('width', squareSize.toString());
+            square.setAttribute('height', squareSize.toString());
             square.setAttribute('rx', '2');
             if (i === 0) {
                 square.setAttribute('fill', 'var(--typo3-heatmap-empty-color, rgba(235, 237, 240, 0.3))');
             }
             else {
-                const { r, g, b } = this.config.color;
-                const opacities = [0, 0.4, 0.6, 0.8, 1.0]; // Match ColorScale opacity values
                 square.setAttribute('fill', `rgba(${r}, ${g}, ${b}, ${opacities[i]})`);
             }
-            // Add hover tooltip with value range
             this.addLegendSquareTooltip(square, i, thresholds);
             legendGroup.appendChild(square);
         }
-        // "More" label - positioned after squares + spacing
-        const moreLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        moreLabel.setAttribute('x', (squaresStartX + squaresWidth + minSpacing).toString());
+        const moreLabel = document.createElementNS(SVG_NS, 'text');
+        moreLabel.setAttribute('x', (squaresStartX + squaresWidth + spacing).toString());
         moreLabel.setAttribute('y', legendY.toString());
         moreLabel.setAttribute('fill', '#586069');
-        moreLabel.setAttribute('font-size', '11px');
+        moreLabel.setAttribute('font-size', '9px');
         moreLabel.textContent = this.config.legendMore;
         legendGroup.appendChild(moreLabel);
-        this.mainGroup.appendChild(legendGroup);
+        svg.appendChild(legendGroup);
     }
     estimateTextWidth(text, fontSize) {
-        // Rough estimation: average character width is about 0.6 * fontSize
-        // This works well for typical fonts used in SVG
+        // Rough estimate: average glyph width ~0.6 * font size.
         return text.length * fontSize * 0.6;
     }
     addLegendSquareTooltip(square, level, thresholds) {
-        if (!this.tooltip)
-            return;
         let tooltipText;
         if (level === 0) {
-            // Empty/no data
             tooltipText = '0';
         }
         else if (level === 4) {
-            // Highest level - show threshold and above
             tooltipText = `${thresholds[level]}+`;
         }
         else {
-            // Show range between thresholds
             const minValue = thresholds[level];
             const maxValue = thresholds[level + 1] - 1;
             tooltipText = minValue === maxValue ? `${minValue}` : `${minValue}-${maxValue}`;
         }
-        const showTooltip = (event) => {
-            if (!this.tooltip)
-                return;
-            const squareX = parseFloat(square.getAttribute('x') || '0') + this.layout.offsetX;
-            const squareY = parseFloat(square.getAttribute('y') || '0') + this.layout.offsetY;
-            this.tooltip.show(squareX + 5, // Center on square horizontally
-            squareY, // Position at square level vertically
-            tooltipText, this.layout.containerWidth, this.layout.containerHeight);
-        };
-        const hideTooltip = () => {
-            if (!this.tooltip)
-                return;
-            this.tooltip.hide();
-        };
-        square.addEventListener('mouseover', showTooltip);
-        square.addEventListener('mouseout', hideTooltip);
+        square.addEventListener('mouseover', () => this.tooltip.show(square, tooltipText));
+        square.addEventListener('mouseout', () => this.tooltip.hide());
     }
     destroy() {
-        if (this.container && this.svg) {
-            this.container.removeChild(this.svg);
+        this.destroyed = true;
+        this.resizeObserver?.disconnect();
+        this.resizeHandler?.cancel();
+        this.tooltip.destroy();
+        if (this.svg) {
+            this.svg.remove();
+            this.svg = undefined;
         }
     }
 }

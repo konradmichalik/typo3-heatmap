@@ -1,75 +1,76 @@
 /**
  * Module: @KonradMichalik/Typo3HeatmapWidget/tooltip
  *
- * SVG tooltip component for heatmap cells
+ * HTML overlay tooltip for heatmap cells.
+ *
+ * The tooltip is an absolutely positioned `<div>` inside the (relatively
+ * positioned) container rather than an SVG element. This keeps its text at a
+ * constant pixel size regardless of how the SVG is scaled by its viewBox — an
+ * SVG tooltip would shrink to unreadable in small widgets and balloon in large
+ * ones. Positioning is derived from `getBoundingClientRect()` so it is
+ * independent of the current scale factor.
  */
 export class HeatmapTooltip {
-    constructor(config, layout) {
+    constructor(container) {
         this.isVisible = false;
-        this.config = config;
-        this.layout = layout;
-        this.createElements();
+        this.container = container;
+        this.el = document.createElement('div');
+        this.el.className = 'heatmap-tooltip';
+        Object.assign(this.el.style, {
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            display: 'none',
+            pointerEvents: 'none',
+            zIndex: '10',
+            padding: '4px 8px',
+            borderRadius: '3px',
+            background: '#24292e',
+            color: '#ffffff',
+            fontSize: '12px',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+            lineHeight: '1.3',
+            whiteSpace: 'pre-line',
+            textAlign: 'center',
+            boxShadow: '0 1px 4px rgba(0, 0, 0, 0.25)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+        });
+        this.container.appendChild(this.el);
     }
-    createElements() {
-        // Create group container
-        this.group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        this.group.style.display = 'none';
-        this.group.style.pointerEvents = 'none';
-        // Create background rectangle
-        this.background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        this.background.setAttribute('fill', '#24292e');
-        this.background.setAttribute('rx', '3');
-        this.background.setAttribute('ry', '3');
-        this.background.setAttribute('stroke', 'rgba(255,255,255,0.2)');
-        this.background.setAttribute('stroke-width', '1');
-        // Create text element
-        this.text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        this.text.setAttribute('fill', '#ffffff');
-        this.text.setAttribute('font-size', '12px');
-        this.text.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif');
-        this.text.setAttribute('text-anchor', 'middle');
-        this.text.setAttribute('dominant-baseline', 'middle');
-        this.group.appendChild(this.background);
-        this.group.appendChild(this.text);
-    }
-    show(x, y, content, containerWidth, containerHeight) {
-        this.text.textContent = content;
-        // Calculate text dimensions
-        const textBBox = this.text.getBBox();
-        const padding = 8;
-        const tooltipWidth = textBBox.width + padding * 2;
-        const tooltipHeight = textBBox.height + padding * 2;
-        // Position tooltip to avoid overflow
-        let tooltipX = x - tooltipWidth / 2;
-        let tooltipY = y - tooltipHeight - 8; // 8px above cell
-        // Adjust horizontal position to stay within container
-        if (tooltipX < 0) {
-            tooltipX = 0;
-        }
-        else if (tooltipX + tooltipWidth > containerWidth) {
-            tooltipX = containerWidth - tooltipWidth;
-        }
-        // Adjust vertical position if needed
-        if (tooltipY < 0) {
-            tooltipY = y + this.layout.cellSize + 8; // Below cell instead
-        }
-        // Set background size and position
-        this.background.setAttribute('x', tooltipX.toString());
-        this.background.setAttribute('y', tooltipY.toString());
-        this.background.setAttribute('width', tooltipWidth.toString());
-        this.background.setAttribute('height', tooltipHeight.toString());
-        // Set text position
-        this.text.setAttribute('x', (tooltipX + tooltipWidth / 2).toString());
-        this.text.setAttribute('y', (tooltipY + tooltipHeight / 2).toString());
-        // Show tooltip
-        this.group.style.display = 'block';
+    /**
+     * Show the tooltip above `target`, centered horizontally and clamped to the
+     * container bounds. Falls back to below the target when there is no room
+     * above.
+     */
+    show(target, content) {
+        this.el.textContent = content;
+        this.el.style.display = 'block';
         this.isVisible = true;
+        const containerRect = this.container.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const cellLeft = targetRect.left - containerRect.left;
+        const cellTop = targetRect.top - containerRect.top;
+        const tooltipWidth = this.el.offsetWidth;
+        const tooltipHeight = this.el.offsetHeight;
+        const gap = 6;
+        let left = cellLeft + targetRect.width / 2 - tooltipWidth / 2;
+        left = Math.max(0, Math.min(left, containerRect.width - tooltipWidth));
+        let top = cellTop - tooltipHeight - gap;
+        if (top < 0) {
+            // No room above — place below the cell instead.
+            top = cellTop + targetRect.height + gap;
+        }
+        this.el.style.left = `${left}px`;
+        this.el.style.top = `${top}px`;
     }
     hide() {
-        this.group.style.display = 'none';
+        this.el.style.display = 'none';
         this.isVisible = false;
     }
     isShowing() {
         return this.isVisible;
+    }
+    destroy() {
+        this.el.remove();
     }
 }
