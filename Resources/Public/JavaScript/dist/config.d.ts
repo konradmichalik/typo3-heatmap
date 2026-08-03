@@ -6,6 +6,7 @@
 import { HeatmapOptions, ColorRGB } from './types.js';
 import { DateRangeMode } from './date-utils.js';
 export declare class HeatmapConfig {
+    /** @deprecated Ignored since the viewBox rewrite; use dateRangeMode. Removal targeted for 2.0. */
     duration: number;
     dateRangeMode: DateRangeMode;
     color: ColorRGB;
@@ -13,11 +14,13 @@ export declare class HeatmapConfig {
     showLegend: boolean;
     showYearLabels: boolean;
     showMonthLabels: boolean;
+    /** @deprecated Ignored since the viewBox rewrite. Removal targeted for 2.0. */
     minCellSize: number;
+    /** @deprecated Ignored since the viewBox rewrite. Removal targeted for 2.0. */
     maxCellSize: number;
-    cellSpacing: number;
-    containerPadding: number;
+    /** @deprecated Ignored since the viewBox rewrite. Removal targeted for 2.0. */
     tooltipWidth: number;
+    /** @deprecated Ignored since the viewBox rewrite. Removal targeted for 2.0. */
     tooltipHeight: number;
     tooltipItemSingular: string;
     tooltipItemPlural: string;
