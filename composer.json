@@ -19,7 +19,7 @@
 		"psr/http-message": "^1.0 || ^2.0",
 		"typo3/cms-backend": "^12.0 || ^13.0",
 		"typo3/cms-core": "^12.0 || ^13.0",
-		"typo3/cms-dashboard": "^12.0 || ^13.0",
+		"typo3/cms-dashboard": "^14.0",
 		"typo3/cms-fluid": "^12.0 || ^13.0"
 	},
 	"require-dev": {
