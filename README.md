@@ -8,7 +8,7 @@
 [![Supported TYPO3 versions](https://typo3-badges.dev/badge/typo3_heatmap/typo3/shields.svg)](https://extensions.typo3.org/extension/typo3_heatmap)
 [![Supported PHP Versions](https://img.shields.io/packagist/dependency-v/konradmichalik/typo3-heatmap/php?logo=php)](https://packagist.org/packages/konradmichalik/typo3-heatmap)
 ![Stability](https://typo3-badges.dev/badge/typo3_heatmap/stability/shields.svg)
-[![Coverage](https://img.shields.io/coverallsCoverage/github/konradmichalik/typo3-heatmap?logo=coveralls)](https://coveralls.io/github/konradmichalik/typo3-heatmap)
+[![Coverage](https://coveralls.io/repos/github/konradmichalik/typo3-heatmap/badge.svg?branch=main)](https://coveralls.io/github/konradmichalik/typo3-heatmap)
 [![CGL](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-heatmap/cgl.yml?label=cgl&logo=github)](https://github.com/konradmichalik/typo3-heatmap/actions/workflows/cgl.yml)
 [![Tests](https://img.shields.io/github/actions/workflow/status/konradmichalik/typo3-heatmap/tests.yml?label=tests&logo=github)](https://github.com/konradmichalik/typo3-heatmap/actions/workflows/tests.yml)
 [![License](https://poser.pugx.org/konradmichalik/typo3-heatmap/license)](LICENSE.md)
