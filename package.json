@@ -13,8 +13,8 @@
 		"prepare": "npm run build"
 	},
 	"devDependencies": {
-		"@types/node": "^20.8.0",
-		"typescript": "^5.2.2",
+		"@types/node": "^26.0.0",
+		"typescript": "^7.0.0",
 		"vitest": "^2.1.9"
 	},
 	"keywords": [
