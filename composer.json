@@ -26,7 +26,7 @@
 		"armin/editorconfig-cli": "^2.0",
 		"eliashaeussler/php-cs-fixer-config": "2.3.0",
 		"eliashaeussler/version-bumper": "^2.4 || ^3.0",
-		"ergebnis/composer-normalize": "^2.44",
+		"ergebnis/composer-normalize": "^2.52.0",
 		"friendsofphp/php-cs-fixer": "^3.52",
 		"helhum/typo3-console": "^7.0 || ^8.1",
 		"helmich/typo3-typoscript-lint": "^3.2",
